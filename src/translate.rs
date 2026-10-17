@@ -2,6 +2,7 @@
 //! every other configured service -> formatted reply.
 
 use crate::config::Config;
+use crate::genre::{self, Genre};
 use crate::links::{self, Found, Options};
 use crate::matching;
 use crate::model::{Item, Kind, MusicRef, Reply, Service, Translation};
@@ -17,6 +18,7 @@ pub struct Translator {
     targets: Vec<Service>,
     link_opts: Options,
     max_links: usize,
+    genre_emojis: bool,
     cache: Cache<Found, Arc<Reply>>,
 }
 
@@ -35,6 +37,7 @@ impl Translator {
                 plain_youtube: cfg.behaviour.translate_plain_youtube,
             },
             max_links: cfg.behaviour.max_links_per_message,
+            genre_emojis: cfg.behaviour.genre_emojis,
             cache: Cache::builder()
                 .max_capacity(2_000)
                 .time_to_live(Duration::from_secs(24 * 3600))
@@ -122,6 +125,7 @@ impl Translator {
         );
 
         let mut translations = Vec::new();
+        let mut extra_tags: Vec<String> = Vec::new();
         for &target in &self.targets {
             if target == source.service {
                 continue;
@@ -144,6 +148,19 @@ impl Translator {
                             service: target,
                             url: c.music_ref.url(),
                         });
+                        extra_tags.extend(c.genres.iter().cloned());
+                        if self.genre_emojis
+                            && target == Service::Spotify
+                            && !c.artist_ids.is_empty()
+                            && let Some(s) = &self.spotify
+                        {
+                            match s.artist_genres(&c.artist_ids).await {
+                                Ok(g) => extra_tags.extend(g),
+                                Err(e) => {
+                                    tracing::debug!(error = %e, "spotify artist genres unavailable")
+                                }
+                            }
+                        }
                     }
                     None => tracing::info!(
                         target = target.display_name(),
@@ -156,7 +173,19 @@ impl Translator {
                 }
             }
         }
-        Ok(Some(Reply { item, translations }))
+        let genres = if self.genre_emojis {
+            genre::for_item(&item, &extra_tags)
+        } else {
+            Vec::new()
+        };
+        if !genres.is_empty() {
+            tracing::debug!(genres = %genre_names(&genres), "classified genre");
+        }
+        Ok(Some(Reply {
+            item,
+            translations,
+            genres,
+        }))
     }
 }
 
@@ -184,15 +213,32 @@ pub fn format_replies(replies: &[Reply], reply_on_miss: bool) -> Option<(String,
         } else {
             format!("{icon} <b>{}</b> – {}", esc(&r.item.title), esc(&artist))
         };
+        let vibe = genre::emojis(&r.genres, &r.item.source.id);
+        if !vibe.is_empty() {
+            t.push(' ');
+            t.push_str(&vibe);
+            h.push(' ');
+            h.push_str(&vibe);
+        }
         if r.translations.is_empty() {
             t.push_str("\nNo match found");
             h.push_str("<br>No match found");
         }
         for tr in &r.translations {
-            t.push_str(&format!("\n{}: {}", tr.service.display_name(), tr.url));
-            h.push_str(&format!(
-                "<br>{}: <a href=\"{u}\">{u}</a>",
+            // Plain text: coloured square + name. HTML: the same square plus the
+            // service name in its brand colour; `color` is for older clients,
+            // `data-mx-color` is the spec attribute.
+            t.push_str(&format!(
+                "\n{} {}: {}",
+                tr.service.badge(),
                 tr.service.display_name(),
+                tr.url
+            ));
+            h.push_str(&format!(
+                "<br>{badge} <font color=\"{c}\" data-mx-color=\"{c}\"><b>{name}</b></font>: <a href=\"{u}\">{u}</a>",
+                badge = tr.service.badge(),
+                c = tr.service.color(),
+                name = tr.service.display_name(),
                 u = esc(&tr.url)
             ));
         }
@@ -204,6 +250,15 @@ pub fn format_replies(replies: &[Reply], reply_on_miss: bool) -> Option<(String,
     } else {
         Some((text.join("\n\n"), html.join("<br><br>")))
     }
+}
+
+/// Human-readable genre list for logs.
+pub fn genre_names(genres: &[Genre]) -> String {
+    genres
+        .iter()
+        .map(|g| g.to_string())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 fn esc(s: &str) -> String {
@@ -218,49 +273,73 @@ mod tests {
     use super::*;
     use crate::model::MusicRef;
 
-    #[test]
-    fn formats_track_reply() {
-        let reply = Reply {
-            item: Item {
-                source: MusicRef {
-                    service: Service::Spotify,
-                    kind: Kind::Track,
-                    id: "x".into(),
-                },
-                title: "Rock & Roll".into(),
-                artists: vec!["Led Zeppelin".into()],
-                duration_ms: Some(1),
-                isrc: None,
+    fn item(kind: Kind, title: &str, artists: &[&str]) -> Item {
+        Item {
+            source: MusicRef {
+                service: Service::Spotify,
+                kind,
+                id: "x".into(),
             },
+            title: title.into(),
+            artists: artists.iter().map(|s| s.to_string()).collect(),
+            duration_ms: None,
+            isrc: None,
+            genres: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn formats_track_reply_with_badge_and_genre() {
+        let reply = Reply {
+            item: item(Kind::Track, "Rock & Roll", &["Led Zeppelin"]),
             translations: vec![Translation {
                 service: Service::YoutubeMusic,
                 url: "https://music.youtube.com/watch?v=abc".into(),
             }],
+            genres: vec![Genre::Rock],
         };
         let (t, h) = format_replies(&[reply], false).unwrap();
+        let vibe = genre::emojis(&[Genre::Rock], "x");
         assert_eq!(
             t,
-            "\u{1F3B5} Rock & Roll – Led Zeppelin\nYouTube Music: https://music.youtube.com/watch?v=abc"
+            format!(
+                "\u{1F3B5} Rock & Roll – Led Zeppelin {vibe}\n\u{1F534} YouTube Music: https://music.youtube.com/watch?v=abc"
+            )
         );
         assert!(h.contains("<b>Rock &amp; Roll</b>"));
-        assert!(h.contains("<a href=\"https://music.youtube.com/watch?v=abc\">"));
+        assert!(h.contains(&vibe));
+        assert!(h.contains(
+            "\u{1F534} <font color=\"#FF0000\" data-mx-color=\"#FF0000\"><b>YouTube Music</b></font>: "
+        ));
+        assert!(h.contains(
+            "<a href=\"https://music.youtube.com/watch?v=abc\">https://music.youtube.com/watch?v=abc</a>"
+        ));
+    }
+
+    #[test]
+    fn no_genre_means_no_trailing_space() {
+        let reply = Reply {
+            item: item(Kind::Track, "Song", &["Band"]),
+            translations: vec![Translation {
+                service: Service::Spotify,
+                url: "https://open.spotify.com/track/y".into(),
+            }],
+            genres: vec![],
+        };
+        let (t, _) = format_replies(&[reply], false).unwrap();
+        assert_eq!(
+            t,
+            "\u{1F3B5} Song – Band\n\u{1F7E2} Spotify: https://open.spotify.com/track/y"
+        );
+        assert_eq!(genre_names(&[Genre::Rock, Genre::Pop]), "Rock, Pop");
     }
 
     #[test]
     fn silent_on_miss_by_default() {
         let reply = Reply {
-            item: Item {
-                source: MusicRef {
-                    service: Service::Spotify,
-                    kind: Kind::Album,
-                    id: "x".into(),
-                },
-                title: "A".into(),
-                artists: vec![],
-                duration_ms: None,
-                isrc: None,
-            },
+            item: item(Kind::Album, "A", &[]),
             translations: vec![],
+            genres: vec![],
         };
         assert!(format_replies(std::slice::from_ref(&reply), false).is_none());
         assert!(

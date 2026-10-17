@@ -35,6 +35,24 @@ struct TokenResp {
 #[derive(Deserialize)]
 struct Named {
     name: String,
+    #[serde(default)]
+    id: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct ArtistFull {
+    #[serde(default)]
+    genres: Vec<String>,
+}
+
+#[derive(Deserialize)]
+struct ArtistsResp {
+    #[serde(default = "Vec::new")]
+    artists: Vec<Option<ArtistFull>>,
+}
+
+fn artist_ids(artists: &[Named]) -> Vec<String> {
+    artists.iter().filter_map(|a| a.id.clone()).collect()
 }
 
 #[derive(Deserialize)]
@@ -151,22 +169,34 @@ impl Spotify {
         match r.kind {
             Kind::Track => {
                 let t: TrackJson = self.get(&format!("tracks/{}", r.id), &[]).await?;
+                let ids = artist_ids(&t.artists);
+                let genres = self.artist_genres(&ids).await.unwrap_or_else(|e| {
+                    tracing::debug!(error = %e, "spotify artist genres unavailable");
+                    Vec::new()
+                });
                 Ok(Item {
                     source: r.clone(),
                     title: t.name,
                     artists: t.artists.into_iter().map(|a| a.name).collect(),
                     duration_ms: Some(t.duration_ms),
                     isrc: t.external_ids.and_then(|e| e.isrc),
+                    genres,
                 })
             }
             Kind::Album => {
                 let a: AlbumJson = self.get(&format!("albums/{}", r.id), &[]).await?;
+                let ids = artist_ids(&a.artists);
+                let genres = self.artist_genres(&ids).await.unwrap_or_else(|e| {
+                    tracing::debug!(error = %e, "spotify artist genres unavailable");
+                    Vec::new()
+                });
                 Ok(Item {
                     source: r.clone(),
                     title: a.name,
                     artists: a.artists.into_iter().map(|a| a.name).collect(),
                     duration_ms: None,
                     isrc: None,
+                    genres,
                 })
             }
         }
@@ -223,6 +253,23 @@ impl Spotify {
         Ok(out)
     }
 
+    /// Genre tags for up to 50 artists in one call. Spotify has been thinning
+    /// these out for newer apps, so an empty result is normal.
+    pub async fn artist_genres(&self, ids: &[String]) -> Result<Vec<String>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let joined = ids.iter().take(50).cloned().collect::<Vec<_>>().join(",");
+        let resp: ArtistsResp = self.get("artists", &[("ids", &joined)]).await?;
+        let mut out: Vec<String> = Vec::new();
+        for g in resp.artists.into_iter().flatten().flat_map(|a| a.genres) {
+            if !out.contains(&g) {
+                out.push(g);
+            }
+        }
+        Ok(out)
+    }
+
     /// Follow a `spotify.link/...` redirect chain to a canonical track/album URL.
     pub async fn expand_short_link(&self, url: &str) -> Result<Option<MusicRef>> {
         let resp = self
@@ -248,9 +295,11 @@ fn track_candidate(t: TrackJson) -> Candidate {
             id: t.id,
         },
         title: t.name,
+        artist_ids: artist_ids(&t.artists),
         artists: t.artists.into_iter().map(|a| a.name).collect(),
         duration_ms: Some(t.duration_ms),
         bonus: 0.0,
+        genres: Vec::new(),
     }
 }
 
@@ -262,9 +311,11 @@ fn album_candidate(a: AlbumJson) -> Candidate {
             id: a.id,
         },
         title: a.name,
+        artist_ids: artist_ids(&a.artists),
         artists: a.artists.into_iter().map(|a| a.name).collect(),
         duration_ms: None,
         bonus: 0.0,
+        genres: Vec::new(),
     }
 }
 

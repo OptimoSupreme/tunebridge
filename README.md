@@ -7,10 +7,18 @@ replies with Spotify. It works with any Matrix client because the reply is an
 ordinary quoted message.
 
 ```
-you:        https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b
-tunebridge: ↳ 🎵 Blinding Lights – The Weeknd
-            YouTube Music: https://music.youtube.com/watch?v=4NRXx6U8ABQ
+you:        check this out https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b 🔥
+tunebridge: ↳ 🎵 Blinding Lights – The Weeknd ✨🎤
+            🔴 YouTube Music: https://music.youtube.com/watch?v=4NRXx6U8ABQ
 ```
+
+Each target link is prefixed with a service badge: 🟢 for Spotify and 🔴 for
+YouTube Music, and in clients that render HTML the service name is also shown
+in the brand colour. When a genre is known (Spotify artist genres, YouTube
+topic categories) a small genre emoji set follows the title, e.g. 🤘🎸 for
+rock or 🎷🌙 for jazz; there are several sets per genre and the pick is
+stable per song. Turn it off with `genre_emojis = false`. Links are found
+anywhere inside a message, surrounded by other text or not.
 
 Supported inputs: `open.spotify.com/track|album/…`, `spotify:track:…` URIs,
 `spotify.link` short links, `music.youtube.com/watch?v=…`,
@@ -81,6 +89,13 @@ cosmetic; messages are still delivered. You can verify it later from your own
 session if you want the green shield.
 
 ### 4. Deploy as a container
+
+A prebuilt image is published to `ghcr.io/optimosupreme/tunebridge` by the
+`image` GitHub Actions workflow on every push to `main`, on version tags, and
+on a monthly schedule so `latest` picks up base-image fixes. Use it with
+`image: ghcr.io/optimosupreme/tunebridge:latest` if you would rather pull than
+build.
+
 
 The image is a plain multi-stage build (`Dockerfile`). `deploy.sh` builds it
 with podman on your workstation, streams it to the server with

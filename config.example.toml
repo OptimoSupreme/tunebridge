@@ -26,3 +26,4 @@ targets = ["spotify", "youtube_music"]  # services to translate *to*; the link's
 translate_plain_youtube = false         # also react to youtube.com / youtu.be links (most are not music)
 reply_on_miss = false                   # post "No match found" instead of staying silent
 max_links_per_message = 5
+genre_emojis = true                     # append genre emoji (🤘🎸, 🎷🌙, ...) when a genre is known

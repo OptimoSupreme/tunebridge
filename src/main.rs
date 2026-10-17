@@ -1,4 +1,5 @@
 mod config;
+mod genre;
 mod links;
 mod matching;
 mod matrix;

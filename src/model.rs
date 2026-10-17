@@ -17,6 +17,22 @@ impl Service {
             Service::YoutubeMusic => "YouTube Music",
         }
     }
+
+    /// Coloured square used as a service badge in plain-text replies.
+    pub fn badge(self) -> &'static str {
+        match self {
+            Service::Spotify => "🟢",
+            Service::YoutubeMusic => "🔴",
+        }
+    }
+
+    /// Brand colour for HTML replies.
+    pub fn color(self) -> &'static str {
+        match self {
+            Service::Spotify => "#1DB954",
+            Service::YoutubeMusic => "#FF0000",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -61,6 +77,8 @@ pub struct Item {
     pub artists: Vec<String>,
     pub duration_ms: Option<u64>,
     pub isrc: Option<String>,
+    /// Free-text genre tags (Spotify artist genres, YouTube topic URLs).
+    pub genres: Vec<String>,
 }
 
 impl Item {
@@ -86,6 +104,8 @@ pub struct Candidate {
     pub duration_ms: Option<u64>,
     /// Small additive nudge for hints like "- Topic" channels or album playlists.
     pub bonus: f64,
+    pub genres: Vec<String>,
+    pub artist_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -99,4 +119,5 @@ pub struct Translation {
 pub struct Reply {
     pub item: Item,
     pub translations: Vec<Translation>,
+    pub genres: Vec<crate::genre::Genre>,
 }

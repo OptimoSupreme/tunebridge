@@ -54,6 +54,9 @@ pub struct Behaviour {
     pub reply_on_miss: bool,
     #[serde(default = "default_max_links")]
     pub max_links_per_message: usize,
+    /// Append genre emoji (e.g. 🤘🎸 for rock) when a genre is known.
+    #[serde(default = "default_true")]
+    pub genre_emojis: bool,
 }
 
 impl Default for Behaviour {
@@ -63,6 +66,7 @@ impl Default for Behaviour {
             translate_plain_youtube: false,
             reply_on_miss: false,
             max_links_per_message: default_max_links(),
+            genre_emojis: true,
         }
     }
 }
@@ -78,6 +82,9 @@ fn default_targets() -> Vec<Service> {
 }
 fn default_max_links() -> usize {
     5
+}
+fn default_true() -> bool {
+    true
 }
 
 impl Config {
@@ -178,6 +185,7 @@ mod tests {
         );
         assert!(!cfg.behaviour.translate_plain_youtube);
         assert_eq!(cfg.behaviour.max_links_per_message, 5);
+        assert!(cfg.behaviour.genre_emojis);
         assert_eq!(cfg.matrix.data_dir, PathBuf::from("./data"));
     }
 }

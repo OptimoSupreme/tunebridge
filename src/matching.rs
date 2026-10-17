@@ -294,6 +294,7 @@ mod tests {
             artists: artists.iter().map(|s| s.to_string()).collect(),
             duration_ms: dur,
             isrc: None,
+            genres: Vec::new(),
         }
     }
     fn cand(title: &str, artists: &[&str], dur: Option<u64>, bonus: f64) -> Candidate {
@@ -307,6 +308,8 @@ mod tests {
             artists: artists.iter().map(|s| s.to_string()).collect(),
             duration_ms: dur,
             bonus,
+            genres: Vec::new(),
+            artist_ids: Vec::new(),
         }
     }
 

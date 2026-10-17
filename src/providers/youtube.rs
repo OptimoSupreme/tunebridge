@@ -39,6 +39,14 @@ struct Video {
     id: String,
     snippet: Snippet,
     content_details: Option<ContentDetails>,
+    topic_details: Option<TopicDetails>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TopicDetails {
+    #[serde(default)]
+    topic_categories: Vec<String>,
 }
 
 #[derive(Deserialize)]
@@ -108,7 +116,10 @@ impl YouTube {
                 let resp: ListResp<Video> = self
                     .get(
                         "videos",
-                        &[("part", "snippet,contentDetails"), ("id", &r.id)],
+                        &[
+                            ("part", "snippet,contentDetails,topicDetails"),
+                            ("id", &r.id),
+                        ],
                     )
                     .await?;
                 let v = resp
@@ -128,6 +139,10 @@ impl YouTube {
                         .and_then(|c| c.duration)
                         .and_then(|d| parse_iso8601_ms(&d)),
                     isrc: None,
+                    genres: v
+                        .topic_details
+                        .map(|t| t.topic_categories)
+                        .unwrap_or_default(),
                 })
             }
             Kind::Album => {
@@ -146,6 +161,7 @@ impl YouTube {
                     artists: vec![artist],
                     duration_ms: None,
                     isrc: None,
+                    genres: Vec::new(),
                 })
             }
         }
@@ -178,7 +194,10 @@ impl YouTube {
                 let v: ListResp<Video> = self
                     .get(
                         "videos",
-                        &[("part", "snippet,contentDetails"), ("id", &ids.join(","))],
+                        &[
+                            ("part", "snippet,contentDetails,topicDetails"),
+                            ("id", &ids.join(",")),
+                        ],
                     )
                     .await?;
                 Ok(v.items
@@ -199,6 +218,11 @@ impl YouTube {
                                 .and_then(|c| c.duration)
                                 .and_then(|d| parse_iso8601_ms(&d)),
                             bonus: if is_topic { 0.05 } else { 0.0 },
+                            genres: v
+                                .topic_details
+                                .map(|t| t.topic_categories)
+                                .unwrap_or_default(),
+                            artist_ids: Vec::new(),
                         }
                     })
                     .collect())
@@ -233,6 +257,8 @@ impl YouTube {
                             title: links::unescape_html(&i.snippet.title),
                             artists: vec![channel_artist],
                             duration_ms: None,
+                            genres: Vec::new(),
+                            artist_ids: Vec::new(),
                             bonus: (if is_album { 0.08 } else { -0.15 })
                                 + (if is_topic { 0.03 } else { 0.0 }),
                         })
