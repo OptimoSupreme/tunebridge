@@ -25,14 +25,6 @@ impl Service {
             Service::YoutubeMusic => "🔴",
         }
     }
-
-    /// Brand colour for HTML replies.
-    pub fn color(self) -> &'static str {
-        match self {
-            Service::Spotify => "#1DB954",
-            Service::YoutubeMusic => "#FF0000",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

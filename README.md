@@ -8,14 +8,15 @@ ordinary quoted message.
 
 ```
 you:        check this out https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b 🔥
-tunebridge: ↳ 🎵 Blinding Lights – The Weeknd ✨🎤
-            🔴 YouTube Music: https://music.youtube.com/watch?v=4NRXx6U8ABQ
+tunebridge: ↳ 🔴 Blinding Lights – The Weeknd 💋🎶      (the title is the link)
 ```
 
-Each target link is prefixed with a service badge: 🟢 for Spotify and 🔴 for
-YouTube Music. Element Web and Fractal also show the service name in its brand
-colour (`<span data-mx-color>`); Element X strips text colours, so the emoji is
-the signal that works everywhere. When a genre is known (from YouTube's topic categories; Spotify no longer
+The title is a masked link to the track or album on the other service; the
+artist, an `· Album` note and the genre emoji are plain text. The coloured
+square says where the link goes: 🟢 Spotify, 🔴 YouTube Music. (Text colours
+would be nicer, but Element X strips them, so the emoji is the marker that
+works everywhere.) Clients that cannot show HTML get the same line with the
+URL underneath. When a genre is known (from YouTube's topic categories; Spotify no longer
 exposes genres to new apps) a small genre emoji set follows the title, e.g. 🤘🎸 for
 rock or 🎷🌙 for jazz; there are several sets per genre and the pick is
 stable per song. Turn it off with `genre_emojis = false`. Links are found

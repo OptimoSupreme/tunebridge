@@ -179,6 +179,12 @@ impl Translator {
 
 /// Render replies as `(plain_text, html)`. Returns `None` when nothing is worth
 /// posting (every item missed and `reply_on_miss` is off).
+///
+/// HTML: one line per target with the title as the link text, e.g.
+/// `🔴 <a href="...">Blinding Lights</a> – The Weeknd 🤘🎸`. The coloured
+/// square says which service the link opens (Element X strips text colours,
+/// so an emoji is the only marker that works everywhere). Plain text cannot
+/// mask links, so there the URL follows on its own line.
 pub fn format_replies(replies: &[Reply], reply_on_miss: bool) -> Option<(String, String)> {
     let mut text = Vec::new();
     let mut html = Vec::new();
@@ -186,53 +192,65 @@ pub fn format_replies(replies: &[Reply], reply_on_miss: bool) -> Option<(String,
         if r.translations.is_empty() && !reply_on_miss {
             continue;
         }
-        let icon = match r.item.kind() {
-            Kind::Track => "\u{1F3B5}",
-            Kind::Album => "\u{1F4BF}",
-        };
         let artist = r.item.artist_line();
-        let mut t = if artist.is_empty() {
-            format!("{icon} {}", r.item.title)
-        } else {
-            format!("{icon} {} – {}", r.item.title, artist)
-        };
-        let mut h = if artist.is_empty() {
-            format!("{icon} <b>{}</b>", esc(&r.item.title))
-        } else {
-            format!("{icon} <b>{}</b> – {}", esc(&r.item.title), esc(&artist))
+        let kind_note = match r.item.kind() {
+            Kind::Track => "",
+            Kind::Album => " · Album",
         };
         let vibe = genre::emojis(&r.genres, &r.item.source.id);
-        if !vibe.is_empty() {
-            t.push(' ');
-            t.push_str(&vibe);
-            h.push(' ');
-            h.push_str(&vibe);
-        }
+        // " – Artist · Album 🤘🎸" (the emoji only on the first line of a reply).
+        let tail = |with_vibe: bool| {
+            let mut s = String::new();
+            if !artist.is_empty() {
+                s.push_str(" – ");
+                s.push_str(&artist);
+            }
+            s.push_str(kind_note);
+            if with_vibe && !vibe.is_empty() {
+                s.push(' ');
+                s.push_str(&vibe);
+            }
+            s
+        };
+
         if r.translations.is_empty() {
-            t.push_str("\nNo match found");
-            h.push_str("<br>No match found");
+            let icon = match r.item.kind() {
+                Kind::Track => "\u{1F3B5}",
+                Kind::Album => "\u{1F4BF}",
+            };
+            text.push(format!(
+                "{icon} {}{}\nNo match found",
+                r.item.title,
+                tail(true)
+            ));
+            html.push(format!(
+                "{icon} <b>{}</b>{}<br>No match found",
+                esc(&r.item.title),
+                esc(&tail(true))
+            ));
+            continue;
         }
-        for tr in &r.translations {
-            // Plain text: coloured square + name. HTML: the same square plus the
-            // service name in its brand colour via the spec attribute
-            // (`<span data-mx-color>`; Element Web and Fractal render it, Element X
-            // strips colours, which is why the emoji badge carries the meaning).
-            t.push_str(&format!(
-                "\n{} {}: {}",
+
+        let mut t_lines = Vec::new();
+        let mut h_lines = Vec::new();
+        for (i, tr) in r.translations.iter().enumerate() {
+            let tail = tail(i == 0);
+            t_lines.push(format!(
+                "{} {}{tail}\n{}",
                 tr.service.badge(),
-                tr.service.display_name(),
+                r.item.title,
                 tr.url
             ));
-            h.push_str(&format!(
-                "<br>{badge} <span data-mx-color=\"{c}\"><b>{name}</b></span>: <a href=\"{u}\">{u}</a>",
-                badge = tr.service.badge(),
-                c = tr.service.color(),
-                name = tr.service.display_name(),
-                u = esc(&tr.url)
+            h_lines.push(format!(
+                "{} <a href=\"{}\">{}</a>{}",
+                tr.service.badge(),
+                esc(&tr.url),
+                esc(&r.item.title),
+                esc(&tail)
             ));
         }
-        text.push(t);
-        html.push(h);
+        text.push(t_lines.join("\n"));
+        html.push(h_lines.join("<br>"));
     }
     if text.is_empty() {
         None
@@ -279,7 +297,7 @@ mod tests {
     }
 
     #[test]
-    fn formats_track_reply_with_badge_and_genre() {
+    fn title_is_the_link_text() {
         let reply = Reply {
             item: item(Kind::Track, "Rock & Roll", &["Led Zeppelin"]),
             translations: vec![Translation {
@@ -293,17 +311,15 @@ mod tests {
         assert_eq!(
             t,
             format!(
-                "\u{1F3B5} Rock & Roll – Led Zeppelin {vibe}\n\u{1F534} YouTube Music: https://music.youtube.com/watch?v=abc"
+                "\u{1F534} Rock & Roll – Led Zeppelin {vibe}\nhttps://music.youtube.com/watch?v=abc"
             )
         );
-        assert!(h.contains("<b>Rock &amp; Roll</b>"));
-        assert!(h.contains(&vibe));
-        assert!(
-            h.contains("\u{1F534} <span data-mx-color=\"#FF0000\"><b>YouTube Music</b></span>: ")
+        assert_eq!(
+            h,
+            format!(
+                "\u{1F534} <a href=\"https://music.youtube.com/watch?v=abc\">Rock &amp; Roll</a> – Led Zeppelin {vibe}"
+            )
         );
-        assert!(h.contains(
-            "<a href=\"https://music.youtube.com/watch?v=abc\">https://music.youtube.com/watch?v=abc</a>"
-        ));
     }
 
     #[test]
@@ -316,12 +332,45 @@ mod tests {
             }],
             genres: vec![],
         };
-        let (t, _) = format_replies(&[reply], false).unwrap();
+        let (t, h) = format_replies(&[reply], false).unwrap();
+        assert_eq!(t, "\u{1F7E2} Song – Band\nhttps://open.spotify.com/track/y");
         assert_eq!(
-            t,
-            "\u{1F3B5} Song – Band\n\u{1F7E2} Spotify: https://open.spotify.com/track/y"
+            h,
+            "\u{1F7E2} <a href=\"https://open.spotify.com/track/y\">Song</a> – Band"
         );
         assert_eq!(genre_names(&[Genre::Rock, Genre::Pop]), "Rock, Pop");
+    }
+
+    #[test]
+    fn album_note_and_multiple_targets() {
+        let reply = Reply {
+            item: item(Kind::Album, "After Hours", &["The Weeknd"]),
+            translations: vec![
+                Translation {
+                    service: Service::YoutubeMusic,
+                    url: "https://music.youtube.com/playlist?list=OLAK5uy_x".into(),
+                },
+                Translation {
+                    service: Service::Spotify,
+                    url: "https://open.spotify.com/album/y".into(),
+                },
+            ],
+            genres: vec![Genre::Pop],
+        };
+        let (t, h) = format_replies(&[reply], false).unwrap();
+        let vibe = genre::emojis(&[Genre::Pop], "x");
+        assert_eq!(
+            t,
+            format!(
+                "\u{1F534} After Hours – The Weeknd · Album {vibe}\nhttps://music.youtube.com/playlist?list=OLAK5uy_x\n\u{1F7E2} After Hours – The Weeknd · Album\nhttps://open.spotify.com/album/y"
+            )
+        );
+        assert_eq!(
+            h,
+            format!(
+                "\u{1F534} <a href=\"https://music.youtube.com/playlist?list=OLAK5uy_x\">After Hours</a> – The Weeknd · Album {vibe}<br>\u{1F7E2} <a href=\"https://open.spotify.com/album/y\">After Hours</a> – The Weeknd · Album"
+            )
+        );
     }
 
     #[test]
