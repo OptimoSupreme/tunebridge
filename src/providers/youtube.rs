@@ -23,8 +23,9 @@ use std::sync::LazyLock;
 
 const API: &str = "https://www.googleapis.com/youtube/v3";
 const INNERTUBE_SEARCH: &str = "https://music.youtube.com/youtubei/v1/search?prettyPrint=false";
-/// InnerTube search filter: albums only.
+/// InnerTube search filters: albums only / songs only.
 const INNERTUBE_ALBUM_FILTER: &str = "EgWKAQIYAWoMEA4QChADEAQQCRAF";
+const INNERTUBE_SONG_FILTER: &str = "EgWKAQIIAWoMEA4QChADEAQQCRAF";
 const INNERTUBE_CLIENT_VERSION: &str = "1.20241028.01.00";
 
 pub struct YouTube {
@@ -220,7 +221,44 @@ impl YouTube {
         }
     }
 
+    /// Tracks: YouTube Music's own song search returns the canonical YTM entries
+    /// (audio tracks with exact durations) and costs no quota; the Data API
+    /// search is the fallback when it fails or finds nothing.
     async fn search_track(&self, item: &Item) -> Result<Vec<Candidate>> {
+        let q = format!(
+            "{} {}",
+            item.primary_artist(),
+            matching::clean_for_query(&item.title)
+        );
+        tracing::debug!(%q, "youtube music song search");
+        match self.innertube_songs(&q).await {
+            Ok(mut cands) if !cands.is_empty() => {
+                cands.truncate(6);
+                // One videos.list call (1 unit) for topic categories (genre emoji).
+                let ids: Vec<String> = cands.iter().map(|c| c.music_ref.id.clone()).collect();
+                match self.videos(&ids).await {
+                    Ok(videos) => {
+                        for v in videos {
+                            if let Some(c) = cands.iter_mut().find(|c| c.music_ref.id == v.id) {
+                                c.genres = topics_of(v.topic_details);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(error = %e, "topic lookup failed; no genre for this one")
+                    }
+                }
+                return Ok(cands);
+            }
+            Ok(_) => tracing::debug!("youtube music song search empty, falling back to Data API"),
+            Err(e) => {
+                tracing::warn!(error = %e, "youtube music song search failed, falling back to Data API")
+            }
+        }
+        self.search_track_data_api(item).await
+    }
+
+    async fn search_track_data_api(&self, item: &Item) -> Result<Vec<Candidate>> {
         let title = matching::clean_for_query(&item.title);
         let q = format!("{} {title}", item.primary_artist());
         tracing::debug!(%q, "youtube video search");
@@ -265,7 +303,26 @@ impl YouTube {
         Ok(out)
     }
 
+    async fn innertube_songs(&self, query: &str) -> Result<Vec<Candidate>> {
+        let v = self
+            .innertube_search(query, Some(INNERTUBE_SONG_FILTER))
+            .await?;
+        let mut items = Vec::new();
+        collect_list_items(&v, &mut items);
+        Ok(items.into_iter().filter_map(parse_song_item).collect())
+    }
+
     async fn innertube_albums(&self, query: &str, params: Option<&str>) -> Result<Vec<Candidate>> {
+        let v = self.innertube_search(query, params).await?;
+        let mut items = Vec::new();
+        collect_list_items(&v, &mut items);
+        Ok(items
+            .into_iter()
+            .filter_map(|i| parse_album_item(i, params.is_none()))
+            .collect())
+    }
+
+    async fn innertube_search(&self, query: &str, params: Option<&str>) -> Result<Value> {
         let mut body = json!({
             "context": {"client": {"clientName": "WEB_REMIX", "clientVersion": INNERTUBE_CLIENT_VERSION, "hl": "en", "gl": "US"}},
             "query": query,
@@ -287,13 +344,7 @@ impl YouTube {
         if !status.is_success() {
             return Err(anyhow!("youtube music search returned {status}"));
         }
-        let v: Value = resp.json().await.context("youtube music search json")?;
-        let mut items = Vec::new();
-        collect_list_items(&v, &mut items);
-        Ok(items
-            .into_iter()
-            .filter_map(|i| parse_album_item(i, params.is_none()))
-            .collect())
+        resp.json().await.context("youtube music search json")
     }
 
     /// `music.youtube.com/browse/MPREb_...` album pages embed the matching
@@ -404,6 +455,80 @@ fn parse_album_item(item: &Value, require_type: bool) -> Option<Candidate> {
         bonus: if kind == "Album" { 0.05 } else { 0.0 },
         genres: Vec::new(),
         duration_reliable: true,
+    })
+}
+
+/// Split subtitle runs on the `" • "` separators YouTube Music uses.
+fn subtitle_groups(runs: &[String]) -> Vec<Vec<String>> {
+    let mut groups: Vec<Vec<String>> = vec![Vec::new()];
+    for r in runs {
+        if r.trim() == "•" {
+            groups.push(Vec::new());
+        } else if !matches!(r.trim(), "&" | "," | "") {
+            groups.last_mut().expect("non-empty").push(r.clone());
+        }
+    }
+    groups.retain(|g| !g.is_empty());
+    groups
+}
+
+/// `"3:22"` / `"1:02:03"` -> milliseconds.
+fn parse_clock_ms(s: &str) -> Option<u64> {
+    let mut secs = 0u64;
+    for part in s.trim().split(':') {
+        secs = secs.checked_mul(60)? + part.parse::<u64>().ok()?;
+    }
+    Some(secs * 1000)
+}
+
+/// First `videoId` anywhere in the item (song rows carry it in
+/// `playlistItemData` and in every watch endpoint).
+fn find_video_id(v: &Value) -> Option<String> {
+    match v {
+        Value::Object(m) => {
+            if let Some(id) = m.get("videoId").and_then(Value::as_str) {
+                return Some(id.to_string());
+            }
+            m.values().find_map(find_video_id)
+        }
+        Value::Array(a) => a.iter().find_map(find_video_id),
+        _ => None,
+    }
+}
+
+/// Song rows: title column, then `[artist(s)] • [album] • [m:ss] • [plays]`
+/// (with a leading `Song` group when the search was not filtered).
+fn parse_song_item(item: &Value) -> Option<Candidate> {
+    let cols = item["flexColumns"].as_array()?;
+    let title = flex_runs(cols.first()?).into_iter().next()?;
+    let sub = cols.get(1).map(flex_runs).unwrap_or_default();
+    let mut groups = subtitle_groups(&sub);
+    if groups
+        .first()
+        .is_some_and(|g| g.len() == 1 && matches!(g[0].as_str(), "Song" | "Video"))
+    {
+        groups.remove(0);
+    }
+    let artists = groups.first().cloned().unwrap_or_default();
+    let duration_ms = groups
+        .iter()
+        .skip(1)
+        .filter_map(|g| g.first())
+        .find_map(|s| parse_clock_ms(s));
+    let id = find_video_id(item)?;
+    Some(Candidate {
+        music_ref: MusicRef {
+            service: Service::YoutubeMusic,
+            kind: Kind::Track,
+            id,
+        },
+        title,
+        artists,
+        duration_ms,
+        // YTM song entries are the audio tracks themselves.
+        duration_reliable: true,
+        bonus: 0.05,
+        genres: Vec::new(),
     })
 }
 
@@ -546,5 +671,75 @@ mod tests {
         let mut out = Vec::new();
         collect_list_items(&v, &mut out);
         assert_eq!(out.len(), 2);
+    }
+}
+
+#[cfg(test)]
+mod song_tests {
+    use super::*;
+
+    #[test]
+    fn clock_and_groups() {
+        assert_eq!(parse_clock_ms("3:22"), Some(202_000));
+        assert_eq!(parse_clock_ms("1:02:03"), Some(3_723_000));
+        assert_eq!(parse_clock_ms("3.6B plays"), None);
+        let runs: Vec<String> = [
+            "The Weeknd",
+            " & ",
+            "Daft Punk",
+            " • ",
+            "Starboy",
+            " • ",
+            "3:50",
+            " • ",
+            "1B plays",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        assert_eq!(
+            subtitle_groups(&runs),
+            vec![
+                vec!["The Weeknd", "Daft Punk"],
+                vec!["Starboy"],
+                vec!["3:50"],
+                vec!["1B plays"]
+            ]
+        );
+    }
+
+    #[test]
+    fn parses_song_item_filtered_and_unfiltered() {
+        let filtered = json!({
+            "flexColumns": [
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Blinding Lights"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+                    {"text": "The Weeknd"}, {"text": " • "}, {"text": "After Hours"}, {"text": " • "}, {"text": "3:22"}
+                ]}}}
+            ],
+            "playlistItemData": {"videoId": "J7p4bzqLvCw"}
+        });
+        let c = parse_song_item(&filtered).expect("song");
+        assert_eq!(c.title, "Blinding Lights");
+        assert_eq!(c.artists, vec!["The Weeknd"]);
+        assert_eq!(c.duration_ms, Some(202_000));
+        assert_eq!(c.music_ref.id, "J7p4bzqLvCw");
+        assert!(c.duration_reliable);
+
+        let unfiltered = json!({
+            "flexColumns": [
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [{"text": "Everlong"}]}}},
+                {"musicResponsiveListItemFlexColumnRenderer": {"text": {"runs": [
+                    {"text": "Song"}, {"text": " • "}, {"text": "Foo Fighters"}, {"text": " • "}, {"text": "The Colour and the Shape"}, {"text": " • "}, {"text": "4:10"}
+                ]}}}
+            ],
+            "overlay": {"watchEndpoint": {"videoId": "eBG7P-K-r1Y"}}
+        });
+        let c = parse_song_item(&unfiltered).expect("song");
+        assert_eq!(c.artists, vec!["Foo Fighters"]);
+        assert_eq!(c.duration_ms, Some(250_000));
+        assert_eq!(c.music_ref.id, "eBG7P-K-r1Y");
+
+        assert!(parse_song_item(&json!({"flexColumns": []})).is_none());
     }
 }

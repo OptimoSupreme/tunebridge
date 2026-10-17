@@ -41,7 +41,10 @@ impl fmt::Display for Genre {
 /// "rhythm and blues" is R&B before blues.
 const RULES: &[(Genre, &[&str])] = &[
     (Genre::Holiday, &["christmas", "holiday", "xmas", "navidad"]),
-    (Genre::Children, &["children", "kids", "nursery", "lullab"]),
+    (
+        Genre::Children,
+        &["children", "kids", "nursery", "lullaby", "lullabies"],
+    ),
     (
         Genre::Soundtrack,
         &[
@@ -83,7 +86,14 @@ const RULES: &[(Genre, &[&str])] = &[
     ),
     (
         Genre::Reggae,
-        &["reggae", "dancehall", "dub", "ska", "roots"],
+        &[
+            "reggae",
+            "dancehall",
+            "dub reggae",
+            "roots reggae",
+            "ska",
+            "rocksteady",
+        ],
     ),
     (
         Genre::Latin,
@@ -144,10 +154,12 @@ const RULES: &[(Genre, &[&str])] = &[
         Genre::Classical,
         &[
             "classical",
-            "orchestr",
+            "orchestra",
+            "orchestral",
             "baroque",
             "opera",
-            "symphon",
+            "symphony",
+            "symphonic",
             "chamber",
             "romantic era",
             "early music",
@@ -212,7 +224,7 @@ const RULES: &[(Genre, &[&str])] = &[
             "indie",
             "independent",
             "alternative",
-            "alt ",
+            "alt",
             "shoegaze",
             "dream pop",
             "bedroom",
@@ -230,7 +242,8 @@ const RULES: &[(Genre, &[&str])] = &[
             "grunge",
             "psychedelic",
             "progressive",
-            "prog",
+            "prog rock",
+            "prog metal",
             "glam",
             "stoner",
             "post-rock",
@@ -258,7 +271,10 @@ const RULES: &[(Genre, &[&str])] = &[
 pub fn classify<S: AsRef<str>>(tags: &[S]) -> Vec<Genre> {
     let mut counts: Vec<(Genre, usize)> = Vec::new();
     for tag in tags {
-        let t = tag.as_ref().to_lowercase().replace('_', " ");
+        // YouTube topics arrive as Wikipedia URLs: keep only the slug.
+        let raw = tag.as_ref();
+        let slug = raw.rsplit('/').next().unwrap_or(raw);
+        let t = slug.to_lowercase().replace('_', " ");
         if let Some(g) = classify_one(&t) {
             match counts.iter_mut().find(|(x, _)| *x == g) {
                 Some(entry) => entry.1 += 1,
@@ -282,11 +298,20 @@ fn specificity(g: Genre) -> u8 {
     }
 }
 
+/// Needles match as whole-word sequences, never as substrings, so "prog"
+/// cannot hit YouTube's `Television_program` topic nor "techno" its
+/// `Technology` topic.
 fn classify_one(tag: &str) -> Option<Genre> {
+    let tokens: Vec<&str> = tag.split_whitespace().collect();
     RULES
         .iter()
-        .find(|(_, needles)| needles.iter().any(|n| tag.contains(n)))
+        .find(|(_, needles)| needles.iter().any(|n| contains_phrase(&tokens, n)))
         .map(|(g, _)| *g)
+}
+
+fn contains_phrase(tokens: &[&str], needle: &str) -> bool {
+    let words: Vec<&str> = needle.split_whitespace().collect();
+    !words.is_empty() && tokens.windows(words.len()).any(|w| w == words.as_slice())
 }
 
 /// Several emoji sets per genre; `emojis` chooses one deterministically per track.
@@ -374,6 +399,12 @@ mod tests {
         );
         assert_eq!(classify(&["neo soul", "r&b"]), vec![Genre::RnbSoul]);
         assert_eq!(classify(&["chicago blues"]), vec![Genre::Blues]);
+        assert_eq!(
+            classify(&["dubstep", "dub techno"]),
+            vec![Genre::Electronic]
+        );
+        assert_eq!(classify(&["progressive rock"]), vec![Genre::Rock]);
+        assert_eq!(classify(&["programming"]), vec![]);
         assert!(classify(&["something unknown"]).is_empty());
     }
 

@@ -11,7 +11,7 @@ use matrix_sdk::event_handler::Ctx;
 use matrix_sdk::ruma::events::room::member::StrippedRoomMemberEvent;
 use matrix_sdk::ruma::events::room::message::{
     AddMentions, ForwardThread, MessageType, OriginalSyncRoomMessageEvent, Relation,
-    RoomMessageEventContent,
+    ReplyWithinThread, RoomMessageEventContent,
 };
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId};
 use matrix_sdk::store::RoomLoadSettings;
@@ -195,14 +195,12 @@ async fn on_message(
     if matches!(ev.content.relates_to, Some(Relation::Replacement(_))) {
         return; // an edit; we already answered the original
     }
+    // Only human text. Bots (including this one) speak in m.notice, and
+    // answering notices is how two link bots end up replying to each other.
     let (body, formatted) = match &ev.content.msgtype {
         MessageType::Text(t) => (
             t.body.as_str(),
             t.formatted.as_ref().map(|f| f.body.as_str()),
-        ),
-        MessageType::Notice(n) => (
-            n.body.as_str(),
-            n.formatted.as_ref().map(|f| f.body.as_str()),
         ),
         _ => return,
     };
@@ -211,11 +209,14 @@ async fn on_message(
     let Some((text, html)) = translate::format_replies(&replies, ctx.reply_on_miss) else {
         return;
     };
-    let content = RoomMessageEventContent::text_html(text, html).make_reply_to(
-        &ev,
-        ForwardThread::Yes,
-        AddMentions::No,
-    );
+    // m.notice marks the message as bot output. Inside a thread, answer in the
+    // thread as a real reply; otherwise a plain rich reply.
+    let content = RoomMessageEventContent::notice_html(text, html);
+    let content = if ev.content.thread().is_some() {
+        content.make_for_thread(&ev, ReplyWithinThread::Yes, AddMentions::No)
+    } else {
+        content.make_reply_to(&ev, ForwardThread::No, AddMentions::No)
+    };
     match room.send(content).await {
         Ok(resp) => {
             tracing::info!(room = %room.room_id(), in_reply_to = %ev.event_id, event = %resp.response.event_id, "sent reply")
