@@ -14,8 +14,8 @@ tunebridge: ↳ 🎵 Blinding Lights – The Weeknd ✨🎤
 
 Each target link is prefixed with a service badge: 🟢 for Spotify and 🔴 for
 YouTube Music, and in clients that render HTML the service name is also shown
-in the brand colour. When a genre is known (Spotify artist genres, YouTube
-topic categories) a small genre emoji set follows the title, e.g. 🤘🎸 for
+in the brand colour. When a genre is known (from YouTube's topic categories; Spotify no longer
+exposes genres to new apps) a small genre emoji set follows the title, e.g. 🤘🎸 for
 rock or 🎷🌙 for jazz; there are several sets per genre and the pick is
 stable per song. Turn it off with `genre_emojis = false`. Links are found
 anywhere inside a message, surrounded by other text or not.

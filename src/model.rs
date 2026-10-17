@@ -104,8 +104,8 @@ pub struct Candidate {
     pub duration_ms: Option<u64>,
     /// Small additive nudge for hints like "- Topic" channels or album playlists.
     pub bonus: f64,
+    /// Free-text genre tags (YouTube topic categories).
     pub genres: Vec<String>,
-    pub artist_ids: Vec<String>,
 }
 
 #[derive(Debug, Clone)]

@@ -149,18 +149,6 @@ impl Translator {
                             url: c.music_ref.url(),
                         });
                         extra_tags.extend(c.genres.iter().cloned());
-                        if self.genre_emojis
-                            && target == Service::Spotify
-                            && !c.artist_ids.is_empty()
-                            && let Some(s) = &self.spotify
-                        {
-                            match s.artist_genres(&c.artist_ids).await {
-                                Ok(g) => extra_tags.extend(g),
-                                Err(e) => {
-                                    tracing::debug!(error = %e, "spotify artist genres unavailable")
-                                }
-                            }
-                        }
                     }
                     None => tracing::info!(
                         target = target.display_name(),

@@ -309,7 +309,6 @@ mod tests {
             duration_ms: dur,
             bonus,
             genres: Vec::new(),
-            artist_ids: Vec::new(),
         }
     }
 

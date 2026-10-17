@@ -222,7 +222,6 @@ impl YouTube {
                                 .topic_details
                                 .map(|t| t.topic_categories)
                                 .unwrap_or_default(),
-                            artist_ids: Vec::new(),
                         }
                     })
                     .collect())
@@ -258,7 +257,6 @@ impl YouTube {
                             artists: vec![channel_artist],
                             duration_ms: None,
                             genres: Vec::new(),
-                            artist_ids: Vec::new(),
                             bonus: (if is_album { 0.08 } else { -0.15 })
                                 + (if is_topic { 0.03 } else { 0.0 }),
                         })
