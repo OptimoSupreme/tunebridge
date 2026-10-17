@@ -103,7 +103,8 @@ the server and no other service is restarted. The compose service it expects:
 
 Inside the same compose network the homeserver URL can simply be
 `http://synapse:8008`. The container runs as uid 10001, so
-`chown -R 10001 tunebridge/data` once on the host.
+`chown -R 10001 tunebridge/data` and make `config.toml` readable by that uid
+(e.g. `chown 10001:$USER config.toml && chmod 640 config.toml`) once on the host.
 
 ## Development
 
