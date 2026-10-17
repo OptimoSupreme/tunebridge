@@ -1,0 +1,27 @@
+[package]
+name = "tunebridge"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+description = "Matrix bot that translates Spotify <-> YouTube Music links in a room"
+license = "MIT"
+
+[dependencies]
+matrix-sdk = { version = "0.19", default-features = false, features = ["e2e-encryption", "sqlite", "bundled-sqlite", "rustls-aws-lc-rs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "query", "form", "rustls", "gzip"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+regex = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+moka = { version = "0.12", features = ["future"] }
+strsim = "0.11"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true

@@ -1,0 +1,6 @@
+/target
+/result
+/config.toml
+/data/
+*.tar
+.direnv/

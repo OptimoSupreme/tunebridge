@@ -1,0 +1,28 @@
+# tunebridge configuration. Copy to config.toml (git-ignored) and fill in.
+# Any secret below can instead come from the environment:
+#   TUNEBRIDGE_MATRIX_PASSWORD, TUNEBRIDGE_SPOTIFY_CLIENT_ID,
+#   TUNEBRIDGE_SPOTIFY_CLIENT_SECRET, TUNEBRIDGE_YOUTUBE_API_KEY
+
+[matrix]
+homeserver = "https://matrix.example.org"   # inside the synapse compose stack: "http://synapse:8008"
+user_id = "@tunebridge:example.org"
+password = "CHANGEME"            # only used for the first login; the session is persisted in data_dir
+data_dir = "./data"              # sqlite state + E2EE keys + session.json; keep it on a volume
+device_name = "tunebridge"
+allowed_rooms = []               # empty = every room the bot is in; else ["!roomid:example.org", ...]
+auto_join_invites_from = ["@you:example.org"]   # invites from anyone else are ignored
+
+[spotify]
+# https://developer.spotify.com/dashboard -> Create app (any redirect URI; no scopes needed)
+client_id = "CHANGEME"
+client_secret = "CHANGEME"
+
+[youtube]
+# https://console.cloud.google.com -> enable "YouTube Data API v3" -> Credentials -> API key
+api_key = "CHANGEME"
+
+[behaviour]
+targets = ["spotify", "youtube_music"]  # services to translate *to*; the link's own service is skipped
+translate_plain_youtube = false         # also react to youtube.com / youtu.be links (most are not music)
+reply_on_miss = false                   # post "No match found" instead of staying silent
+max_links_per_message = 5
