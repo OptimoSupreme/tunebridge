@@ -99,26 +99,19 @@ session if you want the green shield.
 
 A prebuilt image is published to `ghcr.io/optimosupreme/tunebridge` by the
 `image` GitHub Actions workflow on every push to `main`, on version tags, and
-on a monthly schedule so `latest` picks up base-image fixes. Use it with
-`image: ghcr.io/optimosupreme/tunebridge:latest` if you would rather pull than
-build.
-
-
-The image is a plain multi-stage build (`Dockerfile`). `deploy.sh` builds it
-with podman on your workstation, streams it to the server with
-`podman save | ssh host docker load`, and runs
-`docker compose up -d --no-deps tunebridge`, so nothing is ever compiled on
-the server and no other service is restarted. The compose service it expects:
+on a monthly schedule so `latest` picks up base-image fixes. Add it to your
+compose stack next to Synapse:
 
 ```yaml
   tunebridge:
-    image: tunebridge:latest
-    pull_policy: never
+    image: ghcr.io/optimosupreme/tunebridge:latest
     container_name: tunebridge
     restart: unless-stopped
     volumes:
       - ./tunebridge/data:/data
       - ./tunebridge/config.toml:/config.toml:ro
+    environment:
+      - TUNEBRIDGE_CONFIG=/config.toml
     depends_on:
       - synapse
 ```
@@ -127,6 +120,20 @@ Inside the same compose network the homeserver URL can simply be
 `http://synapse:8008`. The container runs as uid 10001, so
 `chown -R 10001 tunebridge/data` and make `config.toml` readable by that uid
 (e.g. `chmod 640 config.toml && chown 10001:$USER config.toml`) once on the host.
+
+Start it, and later update it, with:
+
+```sh
+docker compose pull tunebridge && docker compose up -d --no-deps tunebridge
+```
+
+Only the bot container is (re)created; nothing else in the stack restarts.
+Nothing is compiled on the server.
+
+If you cannot pull from GHCR, `deploy.sh` is the manual route: it builds the
+same `Dockerfile` with podman on your workstation and streams the image to the
+server with `podman save | ssh host docker load` (set the compose image to
+`tunebridge:latest` with `pull_policy: never` in that case).
 
 ## Development
 
