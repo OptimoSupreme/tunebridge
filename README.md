@@ -13,8 +13,9 @@ tunebridge: ↳ 🎵 Blinding Lights – The Weeknd ✨🎤
 ```
 
 Each target link is prefixed with a service badge: 🟢 for Spotify and 🔴 for
-YouTube Music, and in clients that render HTML the service name is also shown
-in the brand colour. When a genre is known (from YouTube's topic categories; Spotify no longer
+YouTube Music. Element Web and Fractal also show the service name in its brand
+colour (`<span data-mx-color>`); Element X strips text colours, so the emoji is
+the signal that works everywhere. When a genre is known (from YouTube's topic categories; Spotify no longer
 exposes genres to new apps) a small genre emoji set follows the title, e.g. 🤘🎸 for
 rock or 🎷🌙 for jazz; there are several sets per genre and the pick is
 stable per song. Turn it off with `genre_emojis = false`. Links are found
@@ -33,8 +34,12 @@ Encrypted rooms are supported; the bot keeps its device keys in `data_dir`.
 
 There is no public cross-service id, so the bot resolves the shared link on its
 home service (title, artists, duration, ISRC on Spotify), searches the other
-service, and scores each hit on title similarity, artist overlap and duration
-(±3 s is a full match, >15 s is rejected). Live / remix / acoustic variants are
+service, and scores each hit on title similarity, artist overlap and duration (±3 s is a
+full match; >15 s is rejected when both sides are trustworthy, i.e. Spotify or
+a YouTube "- Topic" upload; official videos run long, so for them duration can
+only help). Albums are found through YouTube Music's own search endpoint (the Data API
+never returns the auto-generated `OLAK5uy_` album playlists), which also costs
+no quota. Live / remix / acoustic variants are
 penalised against studio versions. YouTube "Artist - Topic" uploads and
 `OLAK5uy_` album playlists get a small bonus because they are the canonical
 YouTube Music entries. Results are cached for 24 h.
@@ -51,8 +56,9 @@ YouTube Music entries. Results are cached for 24 h.
   user scopes. Copy the client id and secret.
 - **YouTube**: <https://console.cloud.google.com> → create/select a project →
   *APIs & Services* → enable **YouTube Data API v3** → *Credentials* → *API
-  key*. The free quota (10 000 units/day) allows roughly 100 translations a
-  day; each one costs one search (100 units) plus a couple of list calls.
+  key*. Free quota: `search.list` is capped at 100 calls per day (one per
+  translation towards YouTube, two for an album in the worst case) and the
+  other calls draw from 10 000 units per day at 1 unit each.
 
 ### 2. Configure
 

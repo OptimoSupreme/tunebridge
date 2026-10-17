@@ -207,12 +207,20 @@ pub fn score(item: &Item, cand: &Candidate) -> f64 {
     let mut weight = W_TITLE + W_ARTIST;
     if let (Some(a), Some(b)) = (item.duration_ms, cand.duration_ms) {
         let d = duration_score(a, b);
-        if d == 0.0 {
-            // Same song never differs by more than 15 s between services.
-            return 0.0;
+        if item.duration_reliable && cand.duration_reliable {
+            // Same recording never differs by more than 15 s between services.
+            if d == 0.0 {
+                return 0.0;
+            }
+            total += d * W_DURATION;
+            weight += W_DURATION;
+        } else {
+            // Official videos carry intros/outros, so a mismatch proves little:
+            // agreement earns full credit, disagreement half, so that an exact
+            // "- Topic" upload still outranks the video.
+            total += d.max(0.5) * W_DURATION;
+            weight += W_DURATION;
         }
-        total += d * W_DURATION;
-        weight += W_DURATION;
     }
     let s = total / weight - variant_penalty(&item.title, &cand.title) + cand.bonus;
     s.clamp(0.0, 1.0)
@@ -295,6 +303,7 @@ mod tests {
             duration_ms: dur,
             isrc: None,
             genres: Vec::new(),
+            duration_reliable: true,
         }
     }
     fn cand(title: &str, artists: &[&str], dur: Option<u64>, bonus: f64) -> Candidate {
@@ -309,6 +318,7 @@ mod tests {
             duration_ms: dur,
             bonus,
             genres: Vec::new(),
+            duration_reliable: true,
         }
     }
 
@@ -465,6 +475,78 @@ mod tests {
         assert_eq!(
             channel_to_artist("Foo Fighters"),
             ("Foo Fighters".into(), false)
+        );
+    }
+}
+
+#[cfg(test)]
+mod duration_tests {
+    use super::*;
+    use crate::model::{Candidate, Item, Kind, MusicRef, Service};
+
+    fn spotify_item(dur: u64) -> Item {
+        Item {
+            source: MusicRef {
+                service: Service::Spotify,
+                kind: Kind::Track,
+                id: "s".into(),
+            },
+            title: "Blinding Lights".into(),
+            artists: vec!["The Weeknd".into()],
+            duration_ms: Some(dur),
+            isrc: None,
+            genres: Vec::new(),
+            duration_reliable: true,
+        }
+    }
+    fn yt(title: &str, channel: &str, dur: u64, reliable: bool) -> Candidate {
+        Candidate {
+            music_ref: MusicRef {
+                service: Service::YoutubeMusic,
+                kind: Kind::Track,
+                id: title.into(),
+            },
+            title: title.into(),
+            artists: vec![channel.into()],
+            duration_ms: Some(dur),
+            bonus: if reliable { 0.05 } else { 0.0 },
+            genres: Vec::new(),
+            duration_reliable: reliable,
+        }
+    }
+
+    #[test]
+    fn official_video_length_is_not_disqualifying_but_topic_upload_wins() {
+        let it = spotify_item(200_040);
+        let video = yt(
+            "The Weeknd - Blinding Lights (Official Video)",
+            "TheWeeknd",
+            263_000,
+            false,
+        );
+        let topic = yt("Blinding Lights", "The Weeknd", 200_000, true);
+        assert!(score(&it, &video) >= THRESHOLD, "{}", score(&it, &video));
+        assert!(score(&it, &topic) > score(&it, &video));
+        assert_eq!(
+            best(&it, &[video.clone(), topic.clone()]).unwrap().title,
+            "Blinding Lights"
+        );
+        // Reverse direction: the video is the source, Spotify's 200 s track must still match.
+        let mut from_video = spotify_item(263_000);
+        from_video.duration_reliable = false;
+        let sp = Candidate {
+            duration_reliable: true,
+            ..topic
+        };
+        assert!(score(&from_video, &sp) >= THRESHOLD);
+    }
+
+    #[test]
+    fn reliable_mismatch_still_rejects() {
+        let it = spotify_item(200_040);
+        assert_eq!(
+            score(&it, &yt("Blinding Lights", "The Weeknd", 263_000, true)),
+            0.0
         );
     }
 }

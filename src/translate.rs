@@ -214,8 +214,9 @@ pub fn format_replies(replies: &[Reply], reply_on_miss: bool) -> Option<(String,
         }
         for tr in &r.translations {
             // Plain text: coloured square + name. HTML: the same square plus the
-            // service name in its brand colour; `color` is for older clients,
-            // `data-mx-color` is the spec attribute.
+            // service name in its brand colour via the spec attribute
+            // (`<span data-mx-color>`; Element Web and Fractal render it, Element X
+            // strips colours, which is why the emoji badge carries the meaning).
             t.push_str(&format!(
                 "\n{} {}: {}",
                 tr.service.badge(),
@@ -223,7 +224,7 @@ pub fn format_replies(replies: &[Reply], reply_on_miss: bool) -> Option<(String,
                 tr.url
             ));
             h.push_str(&format!(
-                "<br>{badge} <font color=\"{c}\" data-mx-color=\"{c}\"><b>{name}</b></font>: <a href=\"{u}\">{u}</a>",
+                "<br>{badge} <span data-mx-color=\"{c}\"><b>{name}</b></span>: <a href=\"{u}\">{u}</a>",
                 badge = tr.service.badge(),
                 c = tr.service.color(),
                 name = tr.service.display_name(),
@@ -273,6 +274,7 @@ mod tests {
             duration_ms: None,
             isrc: None,
             genres: Vec::new(),
+            duration_reliable: true,
         }
     }
 
@@ -296,9 +298,9 @@ mod tests {
         );
         assert!(h.contains("<b>Rock &amp; Roll</b>"));
         assert!(h.contains(&vibe));
-        assert!(h.contains(
-            "\u{1F534} <font color=\"#FF0000\" data-mx-color=\"#FF0000\"><b>YouTube Music</b></font>: "
-        ));
+        assert!(
+            h.contains("\u{1F534} <span data-mx-color=\"#FF0000\"><b>YouTube Music</b></span>: ")
+        );
         assert!(h.contains(
             "<a href=\"https://music.youtube.com/watch?v=abc\">https://music.youtube.com/watch?v=abc</a>"
         ));

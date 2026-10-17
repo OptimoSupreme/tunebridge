@@ -77,6 +77,9 @@ pub struct Item {
     pub artists: Vec<String>,
     pub duration_ms: Option<u64>,
     pub isrc: Option<String>,
+    /// False for YouTube videos that are not "- Topic" auto-uploads: official
+    /// videos carry intros/outros, so their length says little about the track.
+    pub duration_reliable: bool,
     /// Free-text genre tags (Spotify artist genres, YouTube topic URLs).
     pub genres: Vec<String>,
 }
@@ -102,6 +105,7 @@ pub struct Candidate {
     pub title: String,
     pub artists: Vec<String>,
     pub duration_ms: Option<u64>,
+    pub duration_reliable: bool,
     /// Small additive nudge for hints like "- Topic" channels or album playlists.
     pub bonus: f64,
     /// Free-text genre tags (YouTube topic categories).

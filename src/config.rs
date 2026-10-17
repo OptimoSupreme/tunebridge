@@ -93,7 +93,10 @@ impl Config {
         if let Ok(p) = std::env::var("TUNEBRIDGE_CONFIG") {
             return PathBuf::from(p);
         }
-        if let Some(p) = std::env::args().nth(1) {
+        if let Some(p) = std::env::args().nth(1)
+            && p != "translate"
+            && !p.starts_with('-')
+        {
             return PathBuf::from(p);
         }
         PathBuf::from("config.toml")

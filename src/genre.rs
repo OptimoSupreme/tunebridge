@@ -266,8 +266,20 @@ pub fn classify<S: AsRef<str>>(tags: &[S]) -> Vec<Genre> {
             }
         }
     }
-    counts.sort_by_key(|&(_, n)| std::cmp::Reverse(n));
+    // Most votes first; on ties prefer the more specific genre, because YouTube
+    // tags almost everything mainstream "Pop_music" and "Independent_music".
+    counts.sort_by_key(|&(g, n)| (std::cmp::Reverse(n), std::cmp::Reverse(specificity(g))));
     counts.into_iter().map(|(g, _)| g).collect()
+}
+
+/// Tie-break rank: higher is more specific.
+fn specificity(g: Genre) -> u8 {
+    match g {
+        Genre::Pop => 0,
+        Genre::Indie => 1,
+        Genre::Rock | Genre::Electronic | Genre::HipHop | Genre::RnbSoul | Genre::Folk => 2,
+        _ => 3,
+    }
 }
 
 fn classify_one(tag: &str) -> Option<Genre> {
@@ -314,21 +326,18 @@ fn fnv1a(s: &str) -> u64 {
     h
 }
 
-/// Emoji string for up to two genres, chosen deterministically from `seed`
-/// (the source id) so the same song always gets the same set but different
-/// songs vary. Empty when no genre is known.
+/// Emoji set for the top genre, chosen deterministically from `seed` (the
+/// source id) so the same song always gets the same set but different songs
+/// vary. Empty when no genre is known.
 pub fn emojis(genres: &[Genre], seed: &str) -> String {
     let h = fnv1a(seed);
     genres
-        .iter()
-        .take(2)
-        .enumerate()
-        .map(|(i, g)| {
+        .first()
+        .map(|g| {
             let s = sets(*g);
-            s[((h >> (i * 8)) as usize) % s.len()]
+            s[(h as usize) % s.len()].to_string()
         })
-        .collect::<Vec<_>>()
-        .join(" ")
+        .unwrap_or_default()
 }
 
 /// Genres for an item plus any extra tags learned from the match.
@@ -416,10 +425,8 @@ mod tests {
         assert!(distinct.len() > 1, "same set for every seed");
         assert_eq!(emojis(&[], "x"), "");
         assert_eq!(
-            emojis(&[Genre::Rock, Genre::Pop, Genre::Jazz], "x")
-                .split(' ')
-                .count(),
-            2
+            emojis(&[Genre::Rock, Genre::Pop, Genre::Jazz], "x"),
+            emojis(&[Genre::Rock], "x")
         );
     }
 }

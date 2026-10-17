@@ -157,6 +157,7 @@ impl Spotify {
                     artists: t.artists.into_iter().map(|a| a.name).collect(),
                     duration_ms: Some(t.duration_ms),
                     isrc: t.external_ids.and_then(|e| e.isrc),
+                    duration_reliable: true,
                     // Spotify no longer exposes genres to new apps (artist objects come
                     // back without the field; /v1/artists?ids= is 403), so genre tags
                     // come from the YouTube side only.
@@ -171,6 +172,7 @@ impl Spotify {
                     artists: a.artists.into_iter().map(|a| a.name).collect(),
                     duration_ms: None,
                     isrc: None,
+                    duration_reliable: true,
                     // Spotify no longer exposes genres to new apps (artist objects come
                     // back without the field; /v1/artists?ids= is 403), so genre tags
                     // come from the YouTube side only.
@@ -259,6 +261,7 @@ fn track_candidate(t: TrackJson) -> Candidate {
         artists: t.artists.into_iter().map(|a| a.name).collect(),
         duration_ms: Some(t.duration_ms),
         bonus: 0.0,
+        duration_reliable: true,
         genres: Vec::new(),
     }
 }
@@ -274,6 +277,7 @@ fn album_candidate(a: AlbumJson) -> Candidate {
         artists: a.artists.into_iter().map(|a| a.name).collect(),
         duration_ms: None,
         bonus: 0.0,
+        duration_reliable: true,
         genres: Vec::new(),
     }
 }
