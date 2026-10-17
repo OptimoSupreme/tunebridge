@@ -23,8 +23,11 @@ if [[ "${1:-}" != "--no-build" ]]; then
     podman build -t "$IMAGE" .
 fi
 
+# podman prefixes local images with "localhost/"; docker would keep that name, so
+# re-tag under docker.io/library so it loads as plain "$IMAGE".
+podman tag "$IMAGE" "docker.io/library/$IMAGE"
 echo "==> shipping $IMAGE to $HOST"
-podman save "$IMAGE" | ssh "$HOST" "$SUDO docker load"
+podman save --format docker-archive "docker.io/library/$IMAGE" | ssh "$HOST" "$SUDO docker load"
 
 echo "==> starting $SERVICE on $HOST"
 ssh "$HOST" "cd $COMPOSE_DIR && $SUDO docker compose up -d --no-deps $SERVICE"
