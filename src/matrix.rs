@@ -10,8 +10,8 @@ use matrix_sdk::config::SyncSettings;
 use matrix_sdk::event_handler::Ctx;
 use matrix_sdk::ruma::events::room::member::StrippedRoomMemberEvent;
 use matrix_sdk::ruma::events::room::message::{
-    AddMentions, ForwardThread, MessageType, OriginalSyncRoomMessageEvent, Relation,
-    ReplyWithinThread, RoomMessageEventContent,
+    AddMentions, MessageType, OriginalSyncRoomMessageEvent, Relation, ReplyWithinThread,
+    RoomMessageEventContent,
 };
 use matrix_sdk::ruma::{MilliSecondsSinceUnixEpoch, OwnedRoomId, OwnedUserId, RoomId, UserId};
 use matrix_sdk::store::RoomLoadSettings;
@@ -209,18 +209,20 @@ async fn on_message(
     let Some((text, html)) = translate::format_replies(&replies, ctx.reply_on_miss) else {
         return;
     };
-    // m.notice marks the message as bot output. Inside a thread, answer in the
-    // thread as a real reply; otherwise a plain rich reply.
+    // m.notice marks the message as bot output. It is a plain message, not a
+    // reply: the answer arrives within seconds of the link, and a quoted reply
+    // would repeat the long URL. If the link was posted in a thread, stay in
+    // that thread so the answer does not land in the main timeline.
     let content = RoomMessageEventContent::notice_html(text, html);
     let content = if ev.content.thread().is_some() {
-        content.make_for_thread(&ev, ReplyWithinThread::Yes, AddMentions::No)
+        content.make_for_thread(&ev, ReplyWithinThread::No, AddMentions::No)
     } else {
-        content.make_reply_to(&ev, ForwardThread::No, AddMentions::No)
+        content
     };
     match room.send(content).await {
         Ok(resp) => {
-            tracing::info!(room = %room.room_id(), in_reply_to = %ev.event_id, event = %resp.response.event_id, "sent reply")
+            tracing::info!(room = %room.room_id(), for_event = %ev.event_id, event = %resp.response.event_id, "sent translation")
         }
-        Err(e) => tracing::error!(room = %room.room_id(), error = %e, "failed to send reply"),
+        Err(e) => tracing::error!(room = %room.room_id(), error = %e, "failed to send translation"),
     }
 }

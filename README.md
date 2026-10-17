@@ -3,8 +3,8 @@
 A small Matrix bot that keeps a music-sharing chat working when the people in
 it use different streaming services. Paste a Spotify link and it replies with
 the same track or album on YouTube Music; paste a YouTube Music link and it
-replies with Spotify. It works with any Matrix client because the reply is an
-ordinary quoted message.
+replies with Spotify. It works with any Matrix client because the answer is an
+ordinary message (not a quoted reply, so the long URL is not repeated).
 
 ```
 you:        check this out https://open.spotify.com/track/0VjIjW4GlUZAMYd2vXMi3b 🔥
